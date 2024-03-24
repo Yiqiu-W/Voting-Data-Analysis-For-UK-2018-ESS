@@ -1,6 +1,15 @@
 #### Voting-Data-Analysis-For-UK-2018-ESS
 ##### find data on website of the European Social Survey (ESS).
 
+##### library(tidyverse)
+##### library(haven)
+##### library(nnet)
+##### library(broom)
+##### library(modelr)
+##### library(modelsummary)
+##### library(kableExtra)
+##### library(ggplot2)
+##### library(scales)
 [Assignment_3_by_Yiqiu_Wang.pdf](https://github.com/Yiqiu-W/Voting-Data-Analysis-For-UK-2018-ESS/files/14735817/Assignment_3_by_Yiqiu_Wang.pdf)
 
 ##### study party vote choice in the 2017 UK parliamentary election. 

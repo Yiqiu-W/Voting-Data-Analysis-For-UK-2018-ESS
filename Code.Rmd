@@ -1,6 +1,6 @@
 ---
-title: "Assignment_3_by_Yiqiu_Wang"
-author: "Yiqiu Wang"
+title: "XXX"
+author: "XXX"
 date: "2023-02-22"
 header-includes:
     - \usepackage{float}
@@ -18,7 +18,7 @@ library(modelr)
 library(modelsummary)
 library(kableExtra)
 
-ess2018_uk <- read_dta("C:/Users/wangy/Documents/Dchoicelab5/assignment/ESS9e03_1_gb.dta")
+ess2018_uk <- read_dta("yourwd/ESS9e03_1_gb.dta")
 ```
 
 ```{r,include=FALSE}

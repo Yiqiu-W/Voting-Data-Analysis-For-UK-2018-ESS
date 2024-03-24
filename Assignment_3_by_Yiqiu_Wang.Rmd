@@ -1,0 +1,232 @@
+---
+title: "Assignment_3_by_Yiqiu_Wang"
+author: "Yiqiu Wang"
+date: "2023-02-22"
+header-includes:
+    - \usepackage{float}
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE,message = FALSE)
+rm(list=ls())
+library(tidyverse)
+library(haven)
+library(nnet)
+library(broom)
+library(modelr)
+library(modelsummary)
+library(kableExtra)
+
+ess2018_uk <- read_dta("C:/Users/wangy/Documents/Dchoicelab5/assignment/ESS9e03_1_gb.dta")
+```
+
+```{r,include=FALSE}
+# Create a codebook so that we find a variable easier
+ess_codebook <- ess2018_uk |> 
+  summarise(across(everything(), \(x) attr(x, "label")))  |> 
+  pivot_longer(cols = -1, # except the first column(title of dataset)
+               names_to = "variable",
+               values_to = "label") |> 
+  select(-1) # Show every variable with its label except for "name"(title of dataset)
+
+
+# Create a new variable called party_vote based on prtvtcgb
+# Change the different nonresponse categories(Not applicable,Refusal,Don't know) to NA
+# Make party_vote a factor variable
+# We only want to keep Conservative, Labour, Liberal Democrats(the three parties with most voters) and record all other party voting outcomes as "others"
+# Conservative is treated as the reference category
+count(ess2018_uk,prtvtcgb)
+
+ess2018_uk <- ess2018_uk |> 
+  mutate(party_vote = as_factor(zap_missing(prtvtcgb)),
+         party_vote = fct_lump(party_vote, n = 3, other_level = "Others"),
+         party_vote = relevel(party_vote, ref = "Conservative"))
+
+# Create a variable named gender based on gndr
+# 1 and 2 are not so informative so change them to "Male" and "Female"
+count(ess2018_uk,gndr)
+
+ess2018_uk <- ess2018_uk |> 
+  mutate(gender = as_factor(zap_missing(gndr)))
+
+# Create a variable named age based on agea
+ess2018_uk <- ess2018_uk |> 
+  mutate(age = as.numeric(zap_missing(agea)))
+
+# Create a variable named edux where we have lower and higher tertiary education, other educational level and NA.
+# Then create a variable called high_edu where we code lower and higher tertiary education as 1 and other education level as 0, and NA as NA.
+ess2018_uk <- ess2018_uk |> 
+  mutate(edux = as_factor(zap_missing(eisced)),
+         edux = fct_other(edux,keep = c("ES-ISCED V1, lower tertiary education, BA level", "ES-ISCED V2, higher tertiary education, >= MA level")),
+         high_edu = case_when(edux == "ES-ISCED V1, lower tertiary education, BA level"~1,
+                         edux == "ES-ISCED V2, higher tertiary education, >= MA level"~1,
+                         edux == "Other" ~ 0,
+                         TRUE ~ NA),
+         high_edu = as_factor(high_edu))
+# Create a variable called immi_eco based on imbgeco(immigration
+# as good or bad for the country’s economy)
+# Make it 1-10 without descriptive words
+ess2018_uk <- ess2018_uk |> 
+  mutate(immi_eco = as.numeric(zap_missing(imbgeco)))
+
+# Make a sample data
+# Just include the 5 variables which we will use later
+# Filter out all NAs
+ samp <- ess2018_uk |> 
+  select(party_vote,age,gender,high_edu,immi_eco) |> 
+  filter(!is.na(party_vote) 
+  &!is.na(age)&!is.na(gender)&!is.na(high_edu)&!is.na(immi_eco))
+# Inspect the structure of the sample dataset
+  str(samp)
+```
+# Introduction
+
+|     The 2017 United Kingdom general election was held on Thursday 8 June 2017, two years after the previous general election in 2015. The 2017 General Election resulted in a hung Parliament, with no party winning an overall majority. The Conservative Party won the largest number of seats and votes, taking 317 seats and 42.3% of the vote. The Labour Party won 262 seats, and 40.0% of the vote. The Liberal Democrats won 12 seats, a net gain of 4 seats, and 7.4% of the vote. To vote in the general election, one had to be: 1. on the Electoral Register 2. aged 18 or over on polling day 3. a British, Irish or Commonwealth citizen 4. a resident at an address in the UK (or a British citizen living abroad who has been registered to vote in the UK in the last 15 years) 5.not legally excluded from voting or disqualified from voting.
+
+|     The main research question is if and how respondents' view on whether immigration being good or bad for the country’s economy affects their party vote choice. 
+
+|     In 2017, the Conservative Party promised to take various measures to reduce migration and implement stricter controls on immigration. The Labour Party's promised to prioritize the rights of EU citizens living in the UK and to take a more compassionate approach to refugees and asylum seekers. The Liberal Democrat Party made similar promises to those of the Labour Party but its promises was regarded as the most liberal of the major parties. 
+
+|     We expect that voters who viewed immigrants as good for the nation's economy would be more supportive of the Labour Party or the Liberal Democrat Party. While votes who viewed immigrants as bad for the nation's economy would be more supportive of the Conservative Party.
+
+|     We also expect that individuals hold different views on immigrants because of differences in education background. Voters who had higher education level(BA/>=MA) would have a more liberal view on immigrants, while voters with relatively lower education level were less likely to have white collar jobs and were more vulnerable to intensified competitions with immigrants on the labor market when the policies on migration becomes more liberal and more foreigners were seen as qualified to move to UK. These voter would then have the tendency to be more conservative than those with higher education level.
+
+
+# Data
+```{r}
+table_1 <- datasummary((Heading("")*1+Heading("")*party_vote)*(Heading("Number")*1 + Heading("Age(years)")*age + Heading("Migration & Economy")*immi_eco + Heading("Gender")*gender + Heading("High education")*high_edu) ~ Min + Max + Heading("Mean")*mean + Heading("SD")*sd + N + Percent(denom = Equal(party_vote)),
+            data = samp,
+            fmt = 2,
+            title = "Descriptive Statistics for Participants in the 2017 UK Parliamentary Election (ESS)",
+            notes = c("Source: the European Social Survey (ESS) available on https://www.europeansocialsurvey.org/.","High education is coded 1 if a participant's highest education equals to or is higher than BA","Migration and Economy indicates a voter's opinion on whether immigrants are bad or good for the economy","0 means bad for the economy and 10 means good for the economy"),booktabs=TRUE)|> 
+  pack_rows(index=c("All participants"=7,
+                    "Party choice" =7,
+                    "Party choice" =7,
+                    "Party choice" =7,
+                    "Party choice" =7),
+            bold=T) 
+table_1 |>  kable_styling(latex_options = "hold_position")
+```
+|     We focus on the voting data in the 2017 UK parliamentary election. The data was drawn from the 9th (2018) round of the European Social Survey (ESS). 
+
+|     A sample of 390 Primary Sampling Units (PSUs, postcode sectors) is first created. The PSUs will be explicitly stratified by region, Index of Multiple Deprivation (IMD) tertile group, the percentage of households that are privately rented and additionally the percentage of pensioners. Then within each sector, a random sample of addresses is selected in which one person would be selected to participate in the survey. Computer-assisted personal interviewing (CAPI) or computer-assisted mobile interviewing (CAMI) is used during the survey. The interviewer reads questions to the respondents from the screen of a device(computer, smartphone, etc.), and enters the answers in the same device. 
+
+|     Originally, the number of participants in the ESS data set of UK(2018) was 2204. We used data regarding the participants' age, gender, highest education level, opinions on whether immigration being good or bad for the nation's economy and their final party choices from the ESS data set. Then we removed all participant who has at least one nonresponse in these variables. The nonresponse rate is about 31.3%. Eventually we have 1514 participants in the study.
+
+|     Table 1 shows the descriptive statistics for the participants in the 2017 UK Parliamentary Election. High education is a variable coded 1 if a voter has an education equals to or higher than BA and 0 otherwise. Migrartion & Economy is a variable coded based on a 11-point scale which shows whether the voter believes that migrantion is bad(0) or good(10) for the economy. We only keep the three parties(Conservative, Labour and Liberal Democrat) with the highest number of voters and leave all other parties in "Others".
+
+|     The average age of all voters is 55.95. The overall points on migration's effect on economy is 6.06. The numbers of female and male voters are similar. About two thirds of all voters did not have an education equals to or higher than BA and is thus coded 0 in High education.
+
+|     628 of 1514 voters are Conservative Party voters. So Conservative Party had the most voters in 2017. The average age is 60.67 which is higher than average(55.95) and the highest compared with that of all other party voters. Their points on Migration & Economy is 5.70 which is lower than the average(6.06). About three fourths of Conservative Party voters have relatively low education. 
+
+|     554 of 1514 voters are Labour Party voters. The average age is 50.72 which is lower than average(55.95) and the lowest compared with that of other party voters. Their points on Migration & Economy(6.33) is higher than that of Conservative Party voters which suggests a milder attitude towards immigrants. The numbers of female and male voter are similar. The percentage of highly educated voters (38.09%) of Labour Party voters is higher than that of Conservative voters.
+
+|     128 of 1514 voters are Liberal Democrat Party voters. Their points on Migration & Economy(7.00) is the highest among other party voters which suggests their attitude towards immigrants being the most liberal. The percentage of female voters(60.94%) is significantly higher than that of male voters(39.06%). The percentage of highly educated voter(43.75%) is the highest compared with other party voters. 
+
+|     For voters of other parties, the statistics are similar to those of all voters but with lower average age, lower points on Migration & Economy, lower percentage of highly educated voters.
+
+
+```{r, include=FALSE}
+# Multinomial model 1: gender, age and high_edu as the regressors, party_vote as the dependent variable
+mod1 <- multinom(party_vote ~ gender + age + high_edu, data = samp, trace = FALSE)
+summary(mod1)
+
+tidy(mod1, exponentiate = TRUE, conf.int = TRUE)
+
+# Multinomial model 2: gender, age, high_edu and immi_eco as the regressors, party_vote as the dependent variable
+mod2 <- multinom(party_vote ~ gender + age + high_edu + immi_eco, data = samp, trace = FALSE)
+summary(mod2)
+
+tidy(mod2, exponentiate = TRUE, conf.int = TRUE)
+```
+
+# Results
+```{r}
+# Put two models in one table
+# Present the raw coefficients
+models <- list("Model 1" = mod1,
+               "Model 2" = mod2)
+modelsummary(models,
+             coef_rename = c("(Intercept)"="Intercept",
+                                 "genderFemale"="Gender(ref:male)",
+                                 "age"="Age (years)",
+                                 "high_edu1"="Education(ref:low)",
+                                 "immi_eco"="Migration & Economy"),
+             shape = term ~ model + response,
+             fmt = 3,
+             stars = TRUE,
+             title = "Party Choice in the 2017 UK Parliamentary Election. Multinomial Models") |> 
+  footnote("Source: the 9th (2018) round of the European Social Survey (ESS).") |> 
+  kable_styling(latex_options = "hold_position")
+```
+|     Table 2 contains the result of two multinomial models. The first model(Model 1) includes sex, age and educational attainment as the regressors, and the second model(Model 2) with respondents’ views on immigrants' influence as an additional independent variable. The Conservative Party is the reference category. In Gender, male is set as the reference category and in Education, low education(lower than BA) is set as the reference category. Migration & Economy is coded based on a 11-point scale with 0 meaning the voter believes that immigrants are bad for the economy and 10 the opposite. The number of observations of both models equals to 1514.
+
+|     In Model 1, being a female significantly(p < 0.05) increases the log of odds of voting for the Labour Party with 0.253. A one year increase in age significantly(p < 0.001) decreases the log of odds of voting for the Labour Party with 0.034. High education significantly(p < 0.05) increases the log of odds of voting for the Labour Party with 0.298. Female voters, younger voters and highly educated voters are more likely to vote for the Labour Party than male voters, older voters and voter with lower education versus the Conservative Party.
+
+|     Being a female significantly(p < 0.01) increases the log of odds of voting for the Liberal Democrats Party with 0.542. Age does not affect the log of odds significantly. High education significantly(p < 0.001) increases the log of odds of voting for the Liberal Democrats Party with 0.843. Female voters and highly educated voters are more likely to vote for the Liberal Democrats Party than male voters and voter with low education versus the Conservative Party.
+
+|     Gender and Education do not significantly affect the log of odds of voting for other parties(other than Labour and Liberal Democrats). However, a one year increase in age significantly(p < 0.001) decreases the log of odds of voting for other parties with 0.025. Younger voters are more likely to vote for other parties(other than Labour and Liberal Democrats) than older voters versus the Conservative Party.
+
+|     In Model 2, as we add views on immigrants' effect on economy to the model, the effect of education becomes insignificant while a one point increase in Migration & Economy significantly(p < 0.001) increases the log of odds of voting for the Labour Party with 0.095. Being a female significantly(p < 0.05) increases the log of odds of voting for the Labour Party with 0.278. A one year increase in age significantly(p < 0.001) decreases the log of odds of voting for the Labour Party with 0.033. Female voters, younger voters and voters with positive view on immigrants are more likely to vote for the Labour Party than male voters, older voters and voter with negative view on immigrants versus the Conservative Party.
+
+|     Being a female significantly(p < 0.01) increases the log of odds of voting for the Liberal Democrats Party with 0.590. Age does not affect the log of odds significantly. High education significantly(p < 0.01) increases the log of odds of voting for the Liberal Democrats Party with 0.570. A one point increase in Migration & Economy significantly(p < 0.001) increases the log of odds of voting for the Liberal Democrats Party with 0.254. Female voters, highly educated voters and voter with positive view on immigrants are more likely to vote for the Liberal Democrats Party than male voters, voters with low education and voter with negative view on immigrants versus the Conservative Party.
+
+|     A one year increase in age significantly(p < 0.001) decreases the log of odds of voting for other parties(other than Labour and Liberal Democrats) with 0.025. Younger voters are more likely to vote for other parties(other than Labour and Liberal Democrats) than older voters versus the Conservative Party.
+
+|     The AIC and BIC both decrease when we add the attitude towards immigrants into the model which suggests that Model 2 has a better model fit than Model 1.
+
+```{r}
+# predict based on my given information
+grid_all <- expand_grid(gender = c("Male","Female"),
+                        age = seq(20,80,5),
+                        high_edu = c("0","1"),
+                        immi_eco = seq(0,10,1))
+pred <- predict(mod2, newdata = grid_all, type = "probs")|> 
+  as_tibble() |> 
+  bind_cols(grid_all)
+# keep all the probability in a dataset
+pred_long <- pred |> 
+  pivot_longer(cols = Conservative:Others,
+               names_to = "party_bloc",
+               values_to = "prediction")
+
+library(ggplot2)
+theme_set(theme_light())
+library(scales)
+# Change 0 and 1 in education variable to "High education" and "Low education"
+plot_names <- c( "1" = "High education",
+                 "0" = "Low education")
+# Plot
+ggplot(pred_long, aes(immi_eco, prediction, color = party_bloc)) +
+  geom_smooth(se = FALSE) +
+  facet_wrap(~ high_edu,labeller = as_labeller(plot_names)) +
+  scale_y_continuous(breaks = seq(0, 1, .1), 
+                     labels = percent_format(accuracy = 1)) +
+  labs(title = "Graph 1: Predicted probability of party choices in 
+the 2017 UK parliamentary election by attitude towards immigrants",
+       subtitle = "Estimates from multinomial logistic regression",
+       y = "Predicted probability of vote choice",
+       x = "Attitude scores on immigration's influence on country's economy",
+       color = "Party bloc",
+       caption = "Data from ESS 2018.")
+```
+
+|     Graph 1 shows the predicted probability of party choices in the 2017 UK parliamentary election based on attitude scores on immigrants' influence on country's economy. The graph consists of two parts presenting the results for voters with high and low education respectively. Age(male and female) and gender(20-80) are not specified when plotting this graph so the results only show a general trend of the probability of voting for different parties based on different education level and attitude scores on immigration's influence on the nation's economy regardless of a voter's age and gender.
+
+|     Regardless of the voters' education level, the general trend is that the Conservative Party and the Labour party remian the most voted parties among all parties. Higher scores on immigrants' influence on economy makes it more likely for voters to be supportive of the Labour and Liberal Democrats Party and less likely to be supportive of the Conservative Party and other parties(other than the Labour and Liberal Democrats Party). 
+
+|     For voter with low education, when their scores on immigrants' influence on economy are lower than about 6, they are most likely to vote for the Conservative Party with the probability equals to or higher than about 38%(when the score equals to about 6). When their scores equal to or higher than about 6, they are most likely to vote for the Labour Party. So in general, voters with low education are more likely to vote for the Conservative Party than the Labour Party.
+
+|     For voters with high education, when the score is lower than about 4, they are most likely to vote for the Conservative Party with the probability equals to or higher than about 40%(when the score equals to about 4) and when the score equals to or is higher than about 4, they are most likely to vote for the Labour Party. 
+
+|     Hoding the score as constant, voters with high education always have a higher probability of voting for the Labour and Liberal Democrats Party and a lower probability of voting for the Conservative Party and other parties(other than the Labour and Liberal Democrats Party) than voters with low education.
+
+|     For voters with low education, the probability of voting for the Liberal Democrats Party is always lower than that of voting for other parties(other than the Conservative Party and the Labour Party). However, for voters with high education, when the attitude score is higher than about 7, they are more likely to vote for the Liberal Democrates Party than other parties(other than the Conservative Party and the Labour Party).
+
+
+
+# Conclusions
+
+|     In this study, we mainly estimated the relationship between party vote choices and whether respondents viewed immigration as good or bad for the country’s economy using the data in the 2017 UK parliamentary election. We also looked at the relationship between other variables like education, age, gender and the party vote outcomes. In general, female voters, younger voters and voters with positive view on immigrants are more likely to be supportive of the Labour and the Liberal Democrats Party versus the Conservative Party. We also found that highly educated people are more likely to vote for the Labour Party while voters with lower education are more likely to vote for the Conservative Party. 
+
